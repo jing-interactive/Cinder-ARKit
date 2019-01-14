@@ -46,40 +46,82 @@ static mat4 modelMatFromTransform( matrix_float4x4 transform )
     return toMat4( modelMat );
 }
 
+typedef std::string AnchorID;
+template <typename AnchorType>
+static void updateOrAddAnchor( std::vector<AnchorType>& anchorList, AnchorType anchor )
+{
+    const auto anchorID = anchor.mUid;
+    auto foundAnchor = std::find_if( anchorList.begin(),
+                                     anchorList.end(),
+                                     [anchorID](const AnchorType& a) -> bool { return (a.mUid == anchorID);} );
+    
+    if (foundAnchor != anchorList.end())
+        *foundAnchor = anchor;
+    else
+        anchorList.push_back(anchor);
+}
+
+template <typename AnchorType>
+static void removeAnchorWithID( std::vector<AnchorType>& anchors, AnchorID anchorID )
+{
+    std::remove_if( anchors.begin(), anchors.end(), [anchorID](const AnchorType& a) -> bool { return (a.mUid == anchorID); } );
+}
+
+static const std::string getUidStringFromUUID( NSUUID* uid)
+{
+    NSString* uidString = uid.UUIDString;
+    return std::string([uidString UTF8String], [uidString lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+}
+
 static const std::string getUidStringFromAnchor( ARAnchor* anchor )
 {
-    NSString* uid = anchor.identifier.UUIDString;
-    return std::string([uid UTF8String], [uid lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+    return getUidStringFromUUID( anchor.identifier );
 }
 
 
-static ARConfiguration* getNativeARConfiguration( ARKit::Session::TrackingConfiguration config )
+static ARConfiguration* getNativeARConfiguration( ARKit::SessionConfiguration config )
 {
+    if (config.mTrackingType == ARKit::TrackingType::OrientationTracking)
+    {
+        if (config.mPlaneDetection != PlaneDetection::None)
+        {
+            cinder::app::console() << "Error: Cannot use plane detection with OrientationTracking, use WorldTracking instead" << std::endl;
+            DBG_ASSERT(false);
+        }
+        
+        if (config.mImageTrackingEnabled != false)
+        {
+            cinder::app::console() << "Error: Cannot use image tracking with OrientationTracking, use WorldTracking instead" << std::endl;
+            DBG_ASSERT(false);
+        }
+    
+        return [AROrientationTrackingConfiguration new];
+    }
+    
+    DBG_ASSERT(config.mTrackingType == ARKit::TrackingType::WorldTracking);
+    
     ARConfiguration* arConfig;
     ARWorldTrackingConfiguration* wtc = [ARWorldTrackingConfiguration new];
-    
-    switch (config)
+
+    switch (config.mPlaneDetection)
     {
-      case ARKit::Session::TrackingConfiguration::OrientationTracking:
-        arConfig = [AROrientationTrackingConfiguration new];
-        break;
-        
-      case ARKit::Session::TrackingConfiguration::WorldTracking:
-        wtc.planeDetection = ARPlaneDetectionNone;
-        arConfig = wtc;
-        break;
-
-      case ARKit::Session::TrackingConfiguration::WorldTrackingWithHorizontalPlaneDetection:
-        wtc.planeDetection = ARPlaneDetectionHorizontal;
-        arConfig = wtc;
-        break;
-
-      default:
-        // AR Tracking Configuration not implemented
-        DBG_ASSERT(false);
-        arConfig = [ARWorldTrackingConfiguration new];
-        break;
+        case (ARKit::PlaneDetection::None):
+          wtc.planeDetection = ARPlaneDetectionNone;
+          break;
+          
+        case (ARKit::PlaneDetection::Horizontal):
+          wtc.planeDetection = ARPlaneDetectionHorizontal;
+          break;
+          
+        case (ARKit::PlaneDetection::Vertical):
+          wtc.planeDetection = ARPlaneDetectionVertical;
+          break;
     }
+    
+    if (config.mImageTrackingEnabled)
+        wtc.detectionImages = [ARReferenceImage referenceImagesInGroupNamed:@"AR Resources" bundle: nil];
+    
+    arConfig = wtc;
     
     return arConfig;
 }
@@ -91,66 +133,6 @@ static cinder::Channel8u getChannelForCVPixelBuffer( const CVPixelBufferRef& pix
     const size_t width = CVPixelBufferGetWidthOfPlane( pixelBuffer, planeIndex );
     const size_t height = CVPixelBufferGetHeightOfPlane( pixelBuffer, planeIndex );
     return cinder::Channel8u( (int32_t)width, (int32_t)height, (int32_t)bytesPerRow, increment, data + offset );
-}
-
-static gl::GlslProgRef getYCbCrToRBGGlslProgram()
-{
-    std::string vert = R"(
-            #version 100
-            precision mediump float;
-
-            uniform mat4 ciModelViewProjection;
-            uniform bool u_Rotate;
-
-            attribute vec4 ciPosition;
-            attribute vec2 ciTexCoord0;
-
-            varying vec2 v_TexCoord;
-    
-            const float rotTheta = -3.1415926536 * 0.5;
-            const mat2 rot = mat2(cos(rotTheta), -sin(rotTheta), sin(rotTheta), cos(rotTheta));
-
-            void main()
-            {
-                v_TexCoord = ciTexCoord0;
-                
-                if (u_Rotate)
-                {
-                    v_TexCoord -= vec2( 0.5 );
-                    v_TexCoord = rot * v_TexCoord;
-                    v_TexCoord += vec2( 0.5 );
-                }
-                
-                gl_Position = ciModelViewProjection * ciPosition;
-            }
-    )";
-    
-    std::string frag = R"(
-            #version 100
-            precision mediump float;
-    
-            uniform sampler2D u_YTex;
-            uniform sampler2D u_CbTex;
-            uniform sampler2D u_CrTex;
-    
-            varying vec2 v_TexCoord;
-
-            void main()
-            {
-                vec3 rgb = vec3( 0.0 );
-                
-                float y  = texture2D( u_YTex,  v_TexCoord ).r;
-                float cb = texture2D( u_CbTex, v_TexCoord ).r - 0.5;
-                float cr = texture2D( u_CrTex, v_TexCoord ).r - 0.5;
-
-                rgb.x = y + 1.402 * cr;
-                rgb.y = y -0.344 * cb - 0.714 * cr;
-                rgb.z = y + 1.772 * cb;
-                
-                gl_FragColor = vec4( rgb, 1.0 );
-            })";
-    
-    return gl::GlslProg::create( vert, frag );
 }
 
 } // namespace ARKit

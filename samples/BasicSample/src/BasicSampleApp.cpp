@@ -4,6 +4,7 @@
 
 #include "CinderARKit.h"
 
+
 using namespace ci;
 using namespace ci::app;
 using namespace std;
@@ -15,20 +16,22 @@ class BasicSampleApp : public App {
     void update() override;
     void draw() override;
     
-    ARKit::SessionRef mARSession;
+    ARKit::Session mARSession;
 };
 
 void BasicSampleApp::setup()
 {
-    const auto fmt = ARKit::Session::Format().configuration( ARKit::Session::TrackingConfiguration::WorldTrackingWithHorizontalPlaneDetection );
-    mARSession = ARKit::Session::create( fmt );
-    mARSession->run();
+    auto config = ARKit::SessionConfiguration()
+                        .trackingType( ARKit::TrackingType::WorldTracking )
+                        .planeDetection( ARKit::PlaneDetection::Horizontal );
+    
+    mARSession.runConfiguration( config );
 }
 
 void BasicSampleApp::touchesBegan( TouchEvent event )
 {
     // Add a point 50cm in front of camera
-    mARSession->addAnchorRelativeToCamera( vec3(0.0f, 0.0f, -0.5f) );
+    mARSession.addAnchorRelativeToCamera( vec3(0.0f, 0.0f, -0.5f) );
 }
 
 void BasicSampleApp::update()
@@ -40,30 +43,29 @@ void BasicSampleApp::draw()
     gl::clear( Color( 0, 0, 0 ) );
     
     gl::color( 1.0f, 1.0f, 1.0f, 1.0f );
-    mARSession->drawRGBCaptureTexture( getWindowBounds() );
+    mARSession.drawRGBCaptureTexture( getWindowBounds() );
     
     gl::ScopedMatrices matScp;
-    gl::setViewMatrix( mARSession->mViewMatrix );
-    gl::setProjectionMatrix( mARSession->mProjectionMatrix );
+    gl::setViewMatrix( mARSession.getViewMatrix() );
+    gl::setProjectionMatrix( mARSession.getProjectionMatrix() );
     
     gl::ScopedGlslProg glslProg( gl::getStockShader( gl::ShaderDef().color() ));
     gl::ScopedColor colScp;
     gl::color( 1.0f, 1.0f, 1.0f );
     
-    for (const auto& a : mARSession->getAnchors())
+    for (const auto& a : mARSession.getAnchors())
     {
         gl::ScopedMatrices matScp;
         gl::setModelMatrix( a.mTransform );
-        
         gl::drawStrokedCube( vec3(0.0f), vec3(0.02f) );
     }
     
-    for (const auto& a : mARSession->getPlaneAnchors())
+    for (const auto& a : mARSession.getPlaneAnchors())
     {
         gl::ScopedMatrices matScp;
         gl::setModelMatrix( a.mTransform );
         gl::translate( a.mCenter );
-        gl::rotate( M_PI*0.5f, vec3(1,0,0) ); // Make it parallel with the ground
+        gl::rotate( (float)M_PI * 0.5f, vec3(1,0,0) ); // Make it parallel with the ground
         const float xRad = a.mExtent.x * 0.5f;
         const float zRad = a.mExtent.z * 0.5f;
         gl::color( 0.0f, 0.6f, 0.9f, 0.2f );

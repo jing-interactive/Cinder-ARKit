@@ -9,6 +9,7 @@
 #define CinderARKit_h
 
 #include "cinder/gl/gl.h"
+#include "ARSessionImpl.h"
 
 using namespace ci;
 
@@ -21,119 +22,96 @@ namespace ARKit {
 class Session;
 typedef std::shared_ptr<Session> SessionRef;
 
-/**  An anchor point that will be tracked by ARKit*/
-class Anchor
-{
-public:
-    Anchor() {}
-    Anchor( mat4 transform )
-        : mTransform( transform ) {}
-    
-    mat4           mTransform;
-};
-
-/**  An anchor point that includes plane position and extents*/
-class PlaneAnchor
-{
-public:
-    PlaneAnchor(){}
-    PlaneAnchor( mat4 transform, vec3 center, vec3 extent )
-        : mTransform( transform ),
-          mCenter( center ),
-          mExtent( extent ) {}
-    
-    mat4 mTransform;
-    vec3 mCenter;
-    vec3 mExtent;
-};
-
 class Session
 {
 public:
     
-    enum TrackingConfiguration
-    {
-        OrientationTracking,
-        WorldTracking,
-        WorldTrackingWithHorizontalPlaneDetection
-    };
-
-    /**  Format contains the options for the session when it is created
+    Session();
+    
+    /**  Starts the ARSession with a configuration
     */
-    class Format
-    {
-    public:
-        Format(){}
-        Format& configuration( TrackingConfiguration config ) { mConfiguration = config; return *this; }
-        Format& rgbCaptureEnabled( bool rgbEnabled ) { mRGBCaptureEnabled = rgbEnabled; return *this; }
-        
-        TrackingConfiguration mConfiguration = { WorldTrackingWithHorizontalPlaneDetection };
-        bool                  mRGBCaptureEnabled = true;
-    };
+    void runConfiguration( SessionConfiguration config );
     
-    static SessionRef create( Format format = Format() );
-    
-    Session( Format format = Format() );
-    ~Session();
-    
-    void run();
-    void runConfiguration( TrackingConfiguration config );
+    /**  Pauses the session
+    */
     void pause();
     
-    /**  Adds an anchor point to the ARSession relative from the current camera position
-         and orienation.
+    //===== AR Anchors =========================================================//
+    /**  Adds an anchor point to the ARSession relative to the current world orientation.
+         Returns the AnchorID of the anchor to reference later on.
     */
-    void addAnchorRelativeToCamera( vec3 offset );
+    const AnchorID addAnchorRelativeToWorld( vec3 position );
+    
+    /**  Adds an anchor point to the ARSession relative from the current camera position
+         and orienation. Returns the AnchorID of the anchor to reference later on.
+    */
+    const AnchorID addAnchorRelativeToCamera( vec3 offset );
+    
+    /**  Get the list of anchor transforms (points with orientations)
+    */
+    const std::vector<Anchor>& getAnchors() const;
+    
+    /**  Get the list of plane anchor objects
+    */
+    const std::vector<PlaneAnchor>& getPlaneAnchors() const;
+  
+    /**  Get the list of image anchor objects
+     */
+    const std::vector<ImageAnchor>& getImageAnchors() const;
+    
+    /**  Finds the anchor with a certain ID if it exists. Returns an empty
+         std::shared_ptr<Anchor> if it doesn't exist.
+    */
+    std::shared_ptr<Anchor> findAnchorWithID( AnchorID anchorID ) const;
+    
+    
+    //===== Camera Matrices ====================================================//
+    /**  Get the effective View matrix of the device camera
+    */
+    const mat4 getViewMatrix() const;
+    
+    /**  Get the effective Projection matrix of the device camera
+    */
+    const mat4 getProjectionMatrix() const;
+    
 
+    //===== Camera Capture =====================================================//
+    /**  Set whether to process the colour image from the camera
+    */
+    void setRGBCaptureEnabled( bool captureEnabled );
+    
     /**  Returns the luma texture for the current frame capture
     */
-    gl::Texture2dRef getFrameLumaTexture()    { return gl::Texture2d::create( mFrameYChannel ); }
+    gl::Texture2dRef getFrameLumaTexture() const;
     
     /**  Draws the converted rgb capture to the desired area
     */
-    void drawRGBCaptureTexture( Area area );
+    void drawRGBCaptureTexture( Area area ) const;
     
     /**  Returns the estimated light intensity for the scene
          0.0 (very dark) 1.0 (very bright)
     */
-    float getAmbientLightIntensity()        { return mAmbientLightIntensity; }
+    float getAmbientLightIntensity() const;
     
     /**  Returns the estimated light color temperature for the scene in Kelvin
          (6500 is pure white)
     */
-    float getAmbientColorTemperature()      { return mAmbientColorTemperature; }
-    
-    /**  Get the list of anchor transforms (points with orientations)
-    */
-    std::vector<Anchor> getAnchors();
-    
-    /**  Get the list of plane anchor abjoects
-    */
-    std::vector<PlaneAnchor> getPlaneAnchors();
-    
+    float getAmbientColorTemperature() const;
 
-    // Currently members are publically exposed to Obj C Implementation
-    
-    std::map<std::string, Anchor>       mAnchors;
-    std::map<std::string, PlaneAnchor>  mPlaneAnchors;
-    
-    Channel8u              mFrameYChannel;
-    Channel8u              mFrameCbChannel;
-    Channel8u              mFrameCrChannel;
 
-    mat4                   mViewMatrix;
-    mat4                   mProjectionMatrix;
+private:
+
+    /**  Creates the shaders to draw RGB camera capture
+    */
+    static gl::GlslProgRef  createCameraRGBProg();
+
+    // Internally handles bridge to objective-c
+    SessionImpl             mSessionImpl;
     
-    float                  mAmbientLightIntensity;
-    float                  mAmbientColorTemperature;
+    // Shaders to draw the camera image from YCbCr to RGB
+    gl::GlslProgRef         mYCbCrToRGBProg;
     
-    Format                 mFormat;
     
-    bool                   mIsRunning = false;
-    
-    vec2                   mCameraSize = vec2( 1.0f );
-    
-    gl::GlslProgRef        mYCbCrToRGBProg;
     
 };
 } // namespace ARKit
