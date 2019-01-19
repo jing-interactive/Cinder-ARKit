@@ -77,9 +77,9 @@ const AnchorID SessionImpl::addAnchorRelativeToCamera( vec3 offset )
     return getUidStringFromUUID(uid);
 }
 
-const AnchorID SessionImpl::addAnchorRelativeToWorld( vec3 offset )
+const AnchorID SessionImpl::addAnchorRelativeToWorld( vec3 position )
 {
-    NSUUID* uid = [appleARKitSession addAnchorRelativeToWorldWithxOffset:@(offset.x) yOffset:@(offset.y) zOffset:@(offset.z)];
+    NSUUID* uid = [appleARKitSession addAnchorRelativeToWorldWithxPos:@(position.x) yPos:@(position.y) zPos:@(position.z)];
     return getUidStringFromUUID(uid);
 }
 
