@@ -77,6 +77,12 @@ const AnchorID SessionImpl::addAnchorRelativeToCamera( vec3 offset )
     return getUidStringFromUUID(uid);
 }
 
+const AnchorID SessionImpl::addAnchorRelativeToWorld( vec3 offset )
+{
+    NSUUID* uid = [appleARKitSession addAnchorRelativeToWorldWithxOffset:@(offset.x) yOffset:@(offset.y) zOffset:@(offset.z)];
+    return getUidStringFromUUID(uid);
+}
+
 bool SessionImpl::isInterfaceInPortraitOrientation() const
 {
     return UIInterfaceOrientationIsPortrait( [[UIApplication sharedApplication] statusBarOrientation] );
